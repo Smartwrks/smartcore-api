@@ -12,11 +12,11 @@ const app = express();
 const PORT = process.env.PORT || 3002;
 
 // ─── Supabase clients ───────────────────────────────────────────────────────
-// Service-role client bypasses RLS — used for all data reads/writes once the
+// Secret-key client bypasses RLS — used for all data reads/writes once the
 // caller's account scope has been established by middleware.
 export const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
+  process.env.SUPABASE_SECRET_KEY,
   { auth: { persistSession: false } }
 );
 
