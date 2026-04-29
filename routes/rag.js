@@ -17,7 +17,7 @@ router.use(requireAccountAccess);
  *
  * Future: read account_provisioning to pick per-account index host,
  * namespace, embedding model, and minimum score threshold. For now
- * uses platform defaults (PINECONE_DEFAULT_INDEX_HOST + no namespace)
+ * uses platform defaults (PINECONE_HOST_DEFAULT + no namespace)
  * to preserve parity with existing data.
  */
 router.post('/query', async (req, res) => {
@@ -32,7 +32,7 @@ router.post('/query', async (req, res) => {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({ error: 'Embedding provider not configured' });
   }
-  if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_DEFAULT_INDEX_HOST) {
+  if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_HOST_DEFAULT) {
     return res.status(500).json({ error: 'Vector store not configured' });
   }
 
@@ -63,7 +63,7 @@ router.post('/query', async (req, res) => {
     }
 
     // 2. Query Pinecone (no namespace — matches existing index layout).
-    const pineconeResp = await fetch(`${process.env.PINECONE_DEFAULT_INDEX_HOST}/query`, {
+    const pineconeResp = await fetch(`${process.env.PINECONE_HOST_DEFAULT}/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

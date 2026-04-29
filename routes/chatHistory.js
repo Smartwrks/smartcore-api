@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.use(requireAccountAccess);
 
-const PINECONE_HOST = () => process.env.PINECONE_DEFAULT_INDEX_HOST;
+const PINECONE_HOST = () => process.env.PINECONE_HOST_DEFAULT;
 
 async function embedText(text) {
   const resp = await fetch('https://api.openai.com/v1/embeddings', {
