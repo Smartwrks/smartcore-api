@@ -7,6 +7,8 @@ import { createClient } from '@supabase/supabase-js';
 
 import healthRoutes from './routes/health.js';
 import accountRoutes from './routes/account.js';
+import embeddingsRoutes from './routes/embeddings.js';
+import ragRoutes from './routes/rag.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -71,11 +73,13 @@ app.use('/api/', rateLimit({
 // ─── Routes ─────────────────────────────────────────────────────────────────
 app.use('/', healthRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/embeddings', embeddingsRoutes);
+app.use('/api/rag', ragRoutes);
 
-// Future routes (Phase 3+) will mount here:
-// app.use('/api/chat', chatRoutes);
-// app.use('/api/rag', ragRoutes);
-// app.use('/api/pinecone', pineconeAdminRoutes);
+// Future routes will mount here:
+// app.use('/api/chat', chatRoutes);                 // Phase C3
+// app.use('/api/chat-history', chatHistoryRoutes); // Phase C2
+// app.use('/api/pinecone', pineconeAdminRoutes);   // Phase C4
 // app.use('/api/platform', platformRoutes);
 
 app.listen(PORT, () => {
