@@ -1,0 +1,19 @@
+{
+  "name": "smartcore-api",
+  "version": "0.1.0",
+  "description": "SmartCore360 multi-tenant API — proxies LLM, embeddings, and Pinecone calls scoped to the caller's account.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0"
+  }
+}
