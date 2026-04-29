@@ -46,4 +46,55 @@ router.get('/me', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/account/settings
+ *
+ * Update the caller's account_settings row. Only super_admin /
+ * account_admin / legacy admin may call this. Fields not in the
+ * whitelist are silently dropped — the request body cannot grant
+ * itself fields it shouldn't have.
+ */
+const SETTINGS_FIELDS = [
+  'global_ai_prompt',
+  'system_ai_prompt',
+  'ai_model',
+  'ai_temperature',
+  'ai_max_tokens',
+  'integrations',
+];
+
+router.patch('/settings', async (req, res) => {
+  if (!['super_admin', 'account_admin', 'admin'].includes(req.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions to update settings' });
+  }
+
+  const updates = {};
+  for (const field of SETTINGS_FIELDS) {
+    if (field in req.body) updates[field] = req.body[field];
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No updatable fields provided' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('account_settings')
+      .update(updates)
+      .eq('account_id', req.account.id)
+      .select('global_ai_prompt, system_ai_prompt, ai_model, ai_temperature, ai_max_tokens, integrations')
+      .single();
+
+    if (error) {
+      console.error('[account/settings PATCH] error:', error);
+      return res.status(500).json({ error: 'Failed to update settings' });
+    }
+
+    res.json({ settings: data });
+  } catch (err) {
+    console.error('[account/settings PATCH] error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
