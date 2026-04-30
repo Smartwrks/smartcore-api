@@ -11,6 +11,7 @@ import embeddingsRoutes from './routes/embeddings.js';
 import ragRoutes from './routes/rag.js';
 import chatHistoryRoutes from './routes/chatHistory.js';
 import chatRoutes from './routes/chat.js';
+import adminPineconeRoutes from './routes/adminPinecone.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -79,9 +80,9 @@ app.use('/api/embeddings', embeddingsRoutes);
 app.use('/api/rag', ragRoutes);
 app.use('/api/chat-history', chatHistoryRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin/pinecone', adminPineconeRoutes);
 
 // Future routes will mount here:
-// app.use('/api/pinecone', pineconeAdminRoutes);   // Phase C4
 // app.use('/api/platform', platformRoutes);
 
 app.listen(PORT, () => {
