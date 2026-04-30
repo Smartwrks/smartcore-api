@@ -12,6 +12,7 @@ import ragRoutes from './routes/rag.js';
 import chatHistoryRoutes from './routes/chatHistory.js';
 import chatRoutes from './routes/chat.js';
 import adminPineconeRoutes from './routes/adminPinecone.js';
+import adminIngestRoutes from './routes/adminIngest.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -81,6 +82,7 @@ app.use('/api/rag', ragRoutes);
 app.use('/api/chat-history', chatHistoryRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin/pinecone', adminPineconeRoutes);
+app.use('/api/admin/ingest', adminIngestRoutes);
 
 // Future routes will mount here:
 // app.use('/api/platform', platformRoutes);
