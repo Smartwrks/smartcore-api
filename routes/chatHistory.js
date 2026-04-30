@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.use(requireAccountAccess);
 
-const PINECONE_HOST = () => process.env.PINECONE_HOST_DEFAULT;
+const PINECONE_HOST = () => process.env.PINECONE_INDEX_HOST;
 
 async function embedText(text) {
   const resp = await fetch('https://api.openai.com/v1/embeddings', {
@@ -76,6 +76,7 @@ router.post('/index', async (req, res) => {
         'Api-Key': process.env.PINECONE_API_KEY,
       },
       body: JSON.stringify({
+        namespace: req.account.id,
         vectors: [
           {
             id: `chat-${messageId}`,
@@ -153,6 +154,7 @@ router.post('/query', async (req, res) => {
         topK: top,
         includeMetadata: true,
         filter,
+        namespace: req.account.id,
       }),
     });
 

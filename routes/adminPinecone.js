@@ -7,7 +7,7 @@ const router = express.Router();
 router.use(requireAccountAccess);
 router.use(requireAccountAdmin);
 
-const PINECONE_HOST = () => process.env.PINECONE_HOST_DEFAULT;
+const PINECONE_HOST = () => process.env.PINECONE_INDEX_HOST;
 
 function ensureConfigured(res) {
   if (!process.env.PINECONE_API_KEY || !PINECONE_HOST()) {
@@ -50,6 +50,10 @@ async function embedText(text) {
 /**
  * GET /api/admin/pinecone/stats
  * Returns: { totalVectors, dimensions, indexFullness, namespaces }
+ *
+ * Stats are scoped to the caller's namespace — totalVectors is the
+ * count for this account, not the platform total. Other accounts'
+ * namespace counts are not exposed.
  */
 router.get('/stats', async (req, res) => {
   if (!ensureConfigured(res)) return;
@@ -67,11 +71,14 @@ router.get('/stats', async (req, res) => {
     }
 
     const data = await resp.json();
+    const myNamespace = req.account.id;
+    const myStats = data.namespaces?.[myNamespace] || { vectorCount: 0 };
+
     res.json({
-      totalVectors: data.totalVectorCount || 0,
+      totalVectors: myStats.vectorCount || 0,
       dimensions: data.dimension || 0,
       indexFullness: data.indexFullness || 0,
-      namespaces: data.namespaces || {},
+      namespaces: { [myNamespace]: myStats },
     });
   } catch (err) {
     console.error('[admin/pinecone/stats] error:', err);
@@ -104,7 +111,12 @@ router.post('/search', async (req, res) => {
 
     const resp = await pineconeFetch('/query', {
       method: 'POST',
-      body: JSON.stringify({ vector, topK: top, includeMetadata: true }),
+      body: JSON.stringify({
+        vector,
+        topK: top,
+        includeMetadata: true,
+        namespace: req.account.id,
+      }),
     });
 
     if (!resp.ok) {
@@ -162,7 +174,12 @@ router.get('/recent', async (req, res) => {
     const dummy = new Array(dimensions).fill(0.001);
     const resp = await pineconeFetch('/query', {
       method: 'POST',
-      body: JSON.stringify({ vector: dummy, topK: top, includeMetadata: true }),
+      body: JSON.stringify({
+        vector: dummy,
+        topK: top,
+        includeMetadata: true,
+        namespace: req.account.id,
+      }),
     });
     if (!resp.ok) {
       return res.status(502).json({ error: 'Vector store error (query)' });
@@ -199,7 +216,7 @@ router.post('/update', async (req, res) => {
   try {
     const resp = await pineconeFetch('/vectors/update', {
       method: 'POST',
-      body: JSON.stringify({ id, setMetadata: metadata }),
+      body: JSON.stringify({ id, setMetadata: metadata, namespace: req.account.id }),
     });
 
     if (!resp.ok) {
@@ -230,7 +247,7 @@ router.post('/delete', async (req, res) => {
   try {
     const resp = await pineconeFetch('/vectors/delete', {
       method: 'POST',
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ ids, namespace: req.account.id }),
     });
 
     if (!resp.ok) {
