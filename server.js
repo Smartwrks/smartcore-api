@@ -11,6 +11,7 @@ import embeddingsRoutes from './routes/embeddings.js';
 import ragRoutes from './routes/rag.js';
 import chatHistoryRoutes from './routes/chatHistory.js';
 import chatRoutes from './routes/chat.js';
+import chatSessionsRoutes from './routes/chatSessions.js';
 import adminPineconeRoutes from './routes/adminPinecone.js';
 import adminIngestRoutes from './routes/adminIngest.js';
 
@@ -81,6 +82,7 @@ app.use('/api/embeddings', embeddingsRoutes);
 app.use('/api/rag', ragRoutes);
 app.use('/api/chat-history', chatHistoryRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/chat-sessions', chatSessionsRoutes);
 app.use('/api/admin/pinecone', adminPineconeRoutes);
 app.use('/api/admin/ingest', adminIngestRoutes);
 
