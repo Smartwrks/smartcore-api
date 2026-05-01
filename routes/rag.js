@@ -63,6 +63,10 @@ router.post('/query', async (req, res) => {
     }
 
     // 2. Query Pinecone scoped to the caller's namespace.
+    //    Exclude chat-history vectors (type: 'chat_message') — those are
+    //    surfaced separately via /api/chat-history/query when the user
+    //    asks an explicitly historical question. Mixing them into normal
+    //    document retrieval pollutes RAG with conversational snippets.
     const pineconeResp = await fetch(`${process.env.PINECONE_INDEX_HOST}/query`, {
       method: 'POST',
       headers: {
@@ -74,6 +78,7 @@ router.post('/query', async (req, res) => {
         topK: top,
         includeMetadata: true,
         namespace: req.account.id,
+        filter: { type: { $ne: 'chat_message' } },
       }),
     });
 
