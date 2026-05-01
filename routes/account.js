@@ -97,4 +97,68 @@ router.patch('/settings', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/account
+ *
+ * Update the caller's accounts row.
+ *   - account_admin (or legacy admin) can edit `name`
+ *   - super_admin can additionally edit `status`
+ *   - `slug` is intentionally NOT editable here (URLs / external
+ *     references depend on it; if needed later, treat as a separate
+ *     super-admin operation with redirect handling)
+ */
+const VALID_STATUSES = new Set(['active', 'trial', 'suspended', 'cancelled']);
+
+router.patch('/', async (req, res) => {
+  if (!['super_admin', 'account_admin', 'admin'].includes(req.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions to update account' });
+  }
+
+  const updates = {};
+
+  if ('name' in req.body) {
+    const name = req.body.name;
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name must be a non-empty string' });
+    }
+    updates.name = name.trim();
+  }
+
+  if ('status' in req.body) {
+    if (req.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Only super_admin can change account status' });
+    }
+    const status = req.body.status;
+    if (typeof status !== 'string' || !VALID_STATUSES.has(status)) {
+      return res.status(400).json({
+        error: `status must be one of: ${Array.from(VALID_STATUSES).join(', ')}`,
+      });
+    }
+    updates.status = status;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No updatable fields provided' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('accounts')
+      .update(updates)
+      .eq('id', req.account.id)
+      .select('id, name, slug, status')
+      .single();
+
+    if (error) {
+      console.error('[account PATCH] error:', error);
+      return res.status(500).json({ error: 'Failed to update account' });
+    }
+
+    res.json({ account: data });
+  } catch (err) {
+    console.error('[account PATCH] error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
