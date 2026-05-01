@@ -15,6 +15,7 @@ import chatSessionsRoutes from './routes/chatSessions.js';
 import remindersRoutes from './routes/reminders.js';
 import templatesRoutes from './routes/templates.js';
 import uploadedDocumentsRoutes from './routes/uploadedDocuments.js';
+import profileRoutes from './routes/profile.js';
 import adminPineconeRoutes from './routes/adminPinecone.js';
 import adminIngestRoutes from './routes/adminIngest.js';
 
@@ -89,6 +90,7 @@ app.use('/api/chat-sessions', chatSessionsRoutes);
 app.use('/api/reminders', remindersRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/uploaded-documents', uploadedDocumentsRoutes);
+app.use('/api/profile', profileRoutes);
 app.use('/api/admin/pinecone', adminPineconeRoutes);
 app.use('/api/admin/ingest', adminIngestRoutes);
 
