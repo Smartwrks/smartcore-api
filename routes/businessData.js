@@ -391,6 +391,7 @@ router.get('/product-performance', async (req, res) => {
 /**
  * GET /api/business/vendor-pricing?ingredient=...
  * Compare vendor prices for an ingredient.
+ * Two-step: find matching ingredients first, then get their pricing.
  */
 router.get('/vendor-pricing', async (req, res) => {
   try {
@@ -399,23 +400,41 @@ router.get('/vendor-pricing', async (req, res) => {
       return res.status(400).json({ error: 'ingredient search term required' });
     }
 
-    const { data, error } = await supabase
-      .from('sc_vendor_pricing')
-      .select('*, sc_vendors(vendor_name, vendor_code, lead_time_days, rating), sc_ingredients(ingredient_name, ingredient_code, category)')
+    // Step 1: Find matching ingredients by name or code
+    const { data: ingredients, error: ingError } = await supabase
+      .from('sc_ingredients')
+      .select('id, ingredient_name, ingredient_code, category')
       .eq('account_id', req.account.id)
-      .or(`sc_ingredients.ingredient_name.ilike.%${ingredient}%,sc_ingredients.ingredient_code.ilike.%${ingredient}%`);
+      .or(`ingredient_name.ilike.%${ingredient}%,ingredient_code.ilike.%${ingredient}%`);
 
-    if (error) throw error;
+    if (ingError) throw ingError;
 
-    // Filter out results where the ingredient join didn't match
-    const filtered = (data || []).filter(d => d.sc_ingredients);
+    if (!ingredients || ingredients.length === 0) {
+      return res.json({ pricing: [], message: `No ingredients found matching "${ingredient}"` });
+    }
+
+    // Step 2: Get vendor pricing for all matching ingredient IDs
+    const ingredientIds = ingredients.map(i => i.id);
+    const { data: pricing, error: priceError } = await supabase
+      .from('sc_vendor_pricing')
+      .select('*, sc_vendors(vendor_name, vendor_code, lead_time_days, rating)')
+      .eq('account_id', req.account.id)
+      .in('ingredient_id', ingredientIds)
+      .order('unit_cost_usd', { ascending: true });
+
+    if (priceError) throw priceError;
+
+    // Build ingredient lookup map
+    const ingMap = {};
+    for (const ing of ingredients) ingMap[ing.id] = ing;
 
     res.json({
-      pricing: filtered.map(d => ({
+      pricing: (pricing || []).map(d => ({
         vendor: d.sc_vendors?.vendor_name,
         vendor_code: d.sc_vendors?.vendor_code,
-        ingredient: d.sc_ingredients?.ingredient_name,
-        ingredient_code: d.sc_ingredients?.ingredient_code,
+        ingredient: ingMap[d.ingredient_id]?.ingredient_name,
+        ingredient_code: ingMap[d.ingredient_id]?.ingredient_code,
+        category: ingMap[d.ingredient_id]?.category,
         unit_cost_usd: d.unit_cost_usd,
         pack_size: d.pack_size,
         is_preferred: d.is_preferred,
