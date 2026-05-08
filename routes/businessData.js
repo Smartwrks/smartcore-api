@@ -76,17 +76,25 @@ router.get('/products', async (req, res) => {
 router.get('/customers/:customerId/orders', async (req, res) => {
   try {
     const { customerId } = req.params;
-    const months = parseInt(req.query.months) || 6;
-    const sinceDate = new Date();
-    sinceDate.setMonth(sinceDate.getMonth() - months);
+    const limit = parseInt(req.query.limit) || 50;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('sc_customer_orders')
       .select('*, sc_products(product_name, product_code, category, sell_price_usd, cost_usd, margin_pct)')
       .eq('account_id', req.account.id)
       .eq('customer_id', customerId)
-      .gte('order_date', sinceDate.toISOString().split('T')[0])
-      .order('order_date', { ascending: false });
+      .order('order_date', { ascending: false })
+      .limit(limit);
+
+    // Optional date filter — only apply if explicitly provided
+    if (req.query.months) {
+      const months = parseInt(req.query.months);
+      const sinceDate = new Date();
+      sinceDate.setMonth(sinceDate.getMonth() - months);
+      query = query.gte('order_date', sinceDate.toISOString().split('T')[0]);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
     res.json({ orders: data || [] });
