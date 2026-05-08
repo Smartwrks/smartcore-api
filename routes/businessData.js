@@ -521,6 +521,256 @@ router.post('/query', async (req, res) => {
  * GET /api/business/schema
  * Returns the sc_ table schemas so the AI can reference them.
  */
+// ─── Quote Management ─────────────────────────────────────────────────────
+
+/**
+ * POST /api/business/quotes
+ * Create a new quote with line items.
+ *
+ * Body: {
+ *   customer_id: UUID,
+ *   items: [{ product_id?, product_name, quantity, unit_price? }],
+ *   notes?: string,
+ *   valid_days?: number (default 30)
+ * }
+ *
+ * Auto-resolves product pricing if unit_price not provided.
+ * Applies customer discount. Calculates line totals and quote total.
+ */
+router.post('/quotes', async (req, res) => {
+  try {
+    const { customer_id, items, notes, valid_days = 30 } = req.body;
+
+    if (!customer_id) {
+      return res.status(400).json({ error: 'customer_id is required' });
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items array is required with at least one item' });
+    }
+
+    // Fetch customer for discount and details
+    const { data: customer, error: custError } = await supabase
+      .from('sc_customers')
+      .select('*')
+      .eq('id', customer_id)
+      .eq('account_id', req.account.id)
+      .single();
+
+    if (custError || !customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    // Generate quote number: QUO-YYYYMMDD-XXX
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const { count } = await supabase
+      .from('sc_quotes')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', req.account.id);
+    const seqNum = String((count || 0) + 1).padStart(3, '0');
+    const quoteNumber = `QUO-${dateStr}-${seqNum}`;
+
+    const validUntil = new Date();
+    validUntil.setDate(validUntil.getDate() + valid_days);
+
+    // Resolve product details for each line item
+    const lineItems = [];
+    let subtotal = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      let product = null;
+      let unitPrice = item.unit_price;
+      let costPerUnit = 0;
+      let description = item.product_name || item.description || `Item ${i + 1}`;
+
+      // Look up product by ID or name
+      if (item.product_id) {
+        const { data } = await supabase
+          .from('sc_products')
+          .select('*')
+          .eq('id', item.product_id)
+          .eq('account_id', req.account.id)
+          .single();
+        product = data;
+      } else if (item.product_name) {
+        const { data } = await supabase
+          .from('sc_products')
+          .select('*')
+          .eq('account_id', req.account.id)
+          .ilike('product_name', `%${item.product_name}%`)
+          .limit(1)
+          .single();
+        product = data;
+      }
+
+      if (product) {
+        description = product.product_name;
+        if (!unitPrice) unitPrice = parseFloat(product.sell_price_usd);
+        costPerUnit = parseFloat(product.cost_usd || 0);
+      }
+
+      if (!unitPrice) {
+        return res.status(400).json({ error: `Could not determine price for item: ${description}` });
+      }
+
+      const qty = parseFloat(item.quantity);
+      const lineTotal = Math.round(qty * unitPrice * 100) / 100;
+      subtotal += lineTotal;
+
+      lineItems.push({
+        product_id: product?.id || null,
+        description,
+        quantity: qty,
+        unit_price_usd: unitPrice,
+        line_total_usd: lineTotal,
+        cost_usd: costPerUnit * qty,
+        sort_order: i,
+      });
+    }
+
+    // Apply customer discount
+    const discountPct = parseFloat(customer.discount_pct || 0);
+    const discountAmount = Math.round(subtotal * (discountPct / 100) * 100) / 100;
+    const total = Math.round((subtotal - discountAmount) * 100) / 100;
+
+    // Create quote header
+    const { data: quote, error: quoteError } = await supabase
+      .from('sc_quotes')
+      .insert({
+        account_id: req.account.id,
+        quote_number: quoteNumber,
+        customer_id: customer.id,
+        status: 'draft',
+        quote_date: new Date().toISOString().split('T')[0],
+        valid_until: validUntil.toISOString().split('T')[0],
+        subtotal_usd: subtotal,
+        discount_pct: discountPct,
+        total_usd: total,
+        notes: notes || null,
+        created_by: req.user.id,
+      })
+      .select('*')
+      .single();
+
+    if (quoteError) {
+      console.error('[business/quotes] Error creating quote:', quoteError);
+      return res.status(500).json({ error: quoteError.message });
+    }
+
+    // Create line items
+    const itemRows = lineItems.map(item => ({
+      account_id: req.account.id,
+      quote_id: quote.id,
+      ...item,
+    }));
+
+    const { data: savedItems, error: itemsError } = await supabase
+      .from('sc_quote_items')
+      .insert(itemRows)
+      .select('*');
+
+    if (itemsError) {
+      console.error('[business/quotes] Error creating line items:', itemsError);
+      // Clean up the quote header
+      await supabase.from('sc_quotes').delete().eq('id', quote.id);
+      return res.status(500).json({ error: itemsError.message });
+    }
+
+    // Calculate total cost and margin for the quote
+    const totalCost = lineItems.reduce((sum, li) => sum + (li.cost_usd || 0), 0);
+    const quoteMargin = total > 0 ? Math.round(((total - totalCost) / total * 100) * 100) / 100 : 0;
+
+    res.json({
+      quote: {
+        ...quote,
+        customer_name: customer.customer_name,
+        customer_email: customer.email,
+        contact_name: customer.contact_name,
+        payment_terms: customer.payment_terms,
+      },
+      items: savedItems,
+      summary: {
+        subtotal: subtotal,
+        discount_pct: discountPct,
+        discount_amount: discountAmount,
+        total: total,
+        total_cost: Math.round(totalCost * 100) / 100,
+        gross_profit: Math.round((total - totalCost) * 100) / 100,
+        margin_pct: quoteMargin,
+        item_count: lineItems.length,
+        total_units: lineItems.reduce((sum, li) => sum + li.quantity, 0),
+      },
+    });
+  } catch (err) {
+    console.error('[business/quotes] error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create quote' });
+  }
+});
+
+/**
+ * GET /api/business/quotes/:id
+ * Retrieve a quote with its line items and customer info.
+ */
+router.get('/quotes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: quote, error: quoteError } = await supabase
+      .from('sc_quotes')
+      .select('*, sc_customers(customer_name, contact_name, email, phone, address, payment_terms, discount_pct)')
+      .eq('id', id)
+      .eq('account_id', req.account.id)
+      .single();
+
+    if (quoteError || !quote) {
+      return res.status(404).json({ error: 'Quote not found' });
+    }
+
+    const { data: items, error: itemsError } = await supabase
+      .from('sc_quote_items')
+      .select('*, sc_products(product_name, product_code, category)')
+      .eq('quote_id', id)
+      .eq('account_id', req.account.id)
+      .order('sort_order', { ascending: true });
+
+    if (itemsError) throw itemsError;
+
+    res.json({ quote, items: items || [] });
+  } catch (err) {
+    console.error('[business/quotes/:id] error:', err);
+    res.status(500).json({ error: 'Failed to retrieve quote' });
+  }
+});
+
+/**
+ * GET /api/business/quotes
+ * List quotes for the account, with optional status filter.
+ */
+router.get('/quotes', async (req, res) => {
+  try {
+    const { status, limit = 20 } = req.query;
+
+    let query = supabase
+      .from('sc_quotes')
+      .select('*, sc_customers(customer_name)')
+      .eq('account_id', req.account.id)
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit) || 20);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    res.json({ quotes: data || [] });
+  } catch (err) {
+    console.error('[business/quotes] error:', err);
+    res.status(500).json({ error: 'Failed to list quotes' });
+  }
+});
+
 router.get('/schema', async (req, res) => {
   res.json({
     tables: {
