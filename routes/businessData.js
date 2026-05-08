@@ -429,4 +429,128 @@ router.get('/vendor-pricing', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/business/query
+ * Flexible Supabase query builder for the sc_ tables.
+ * The AI specifies table, select, filters, ordering — we build and execute.
+ *
+ * Body: { table, select?, filters?, order_by?, ascending?, limit? }
+ *
+ * Safety: only sc_ tables, read-only, account-scoped, max 100 rows.
+ */
+router.post('/query', async (req, res) => {
+  try {
+    const { table, select = '*', filters = {}, order_by, ascending = true, limit = 50 } = req.body;
+
+    if (!table || typeof table !== 'string') {
+      return res.status(400).json({ error: 'table name is required' });
+    }
+
+    const allowedTables = [
+      'sc_vendors', 'sc_ingredients', 'sc_vendor_pricing', 'sc_products',
+      'sc_recipes', 'sc_customers', 'sc_supply_orders', 'sc_customer_orders',
+      'sc_quotes', 'sc_quote_items', 'sc_sales_transactions',
+    ];
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({ error: `Unknown or disallowed table: ${table}` });
+    }
+
+    let query = supabase
+      .from(table)
+      .select(select)
+      .eq('account_id', req.account.id)
+      .limit(Math.min(limit || 50, 100));
+
+    // Apply filters
+    for (const [key, value] of Object.entries(filters)) {
+      if (key.endsWith('.ilike')) {
+        query = query.ilike(key.replace('.ilike', ''), value);
+      } else if (key.endsWith('.gt')) {
+        query = query.gt(key.replace('.gt', ''), value);
+      } else if (key.endsWith('.lt')) {
+        query = query.lt(key.replace('.lt', ''), value);
+      } else if (key.endsWith('.gte')) {
+        query = query.gte(key.replace('.gte', ''), value);
+      } else if (key.endsWith('.lte')) {
+        query = query.lte(key.replace('.lte', ''), value);
+      } else if (key.endsWith('.neq')) {
+        query = query.neq(key.replace('.neq', ''), value);
+      } else {
+        query = query.eq(key, value);
+      }
+    }
+
+    if (order_by) {
+      query = query.order(order_by, { ascending: ascending !== false });
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[business/query] Supabase error:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ rows: data || [], count: (data || []).length });
+  } catch (err) {
+    console.error('[business/query] error:', err);
+    res.status(500).json({ error: err.message || 'Query execution failed' });
+  }
+});
+
+/**
+ * GET /api/business/schema
+ * Returns the sc_ table schemas so the AI can reference them.
+ */
+router.get('/schema', async (req, res) => {
+  res.json({
+    tables: {
+      sc_vendors: {
+        description: 'Suppliers / vendors',
+        columns: 'id, account_id, vendor_code, vendor_name, category, contact_name, email, phone, lead_time_days, payment_terms, rating, is_active',
+      },
+      sc_ingredients: {
+        description: 'Raw materials and ingredients',
+        columns: 'id, account_id, ingredient_code, ingredient_name, category, unit',
+      },
+      sc_vendor_pricing: {
+        description: 'Cost per ingredient per vendor (multiple vendors per item)',
+        columns: 'id, account_id, vendor_id (FK→sc_vendors), ingredient_id (FK→sc_ingredients), unit_cost_usd, pack_size, is_preferred',
+      },
+      sc_products: {
+        description: 'Sellable products / menu items with pricing',
+        columns: 'id, account_id, product_code, product_name, category, sell_price_usd, cost_usd (COGS), margin_pct, is_active',
+      },
+      sc_recipes: {
+        description: 'Bill of materials — ingredients per product',
+        columns: 'id, account_id, product_id (FK→sc_products), ingredient_id (FK→sc_ingredients), qty, unit',
+      },
+      sc_customers: {
+        description: 'B2B wholesale customers',
+        columns: 'id, account_id, customer_code, customer_name, contact_name, email, phone, address, customer_type (cafe/restaurant/hotel/office/retail/wholesale), payment_terms, discount_pct, is_active',
+      },
+      sc_supply_orders: {
+        description: 'Purchase orders to vendors',
+        columns: 'id, account_id, order_code, order_date, vendor_id (FK→sc_vendors), ingredient_id (FK→sc_ingredients), qty_ordered, unit, unit_cost_usd, total_cost_usd, expected_delivery, status (Pending/In Transit/Delivered/Cancelled)',
+      },
+      sc_customer_orders: {
+        description: 'B2B sales to customers',
+        columns: 'id, account_id, order_code, customer_id (FK→sc_customers), product_id (FK→sc_products), order_date, quantity, unit_price_usd, cost_usd, line_total_usd, margin_pct',
+      },
+      sc_quotes: {
+        description: 'Quote headers',
+        columns: 'id, account_id, quote_number, customer_id (FK→sc_customers), status (draft/sent/accepted/rejected/expired), quote_date, valid_until, subtotal_usd, discount_pct, total_usd, notes, created_by',
+      },
+      sc_quote_items: {
+        description: 'Quote line items',
+        columns: 'id, account_id, quote_id (FK→sc_quotes), product_id (FK→sc_products), description, quantity, unit_price_usd, line_total_usd, cost_usd, sort_order',
+      },
+      sc_sales_transactions: {
+        description: 'POS retail sales (individual transactions)',
+        columns: 'id, account_id, sale_date, sale_datetime, payment_type (card/cash), card_token, amount_usd, product_name',
+      },
+    },
+  });
+});
+
 export default router;
