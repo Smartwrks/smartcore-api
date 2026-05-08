@@ -20,6 +20,7 @@ import adminUsersRoutes from './routes/adminUsers.js';
 import adminAnalysisRoutes from './routes/adminAnalysis.js';
 import adminPineconeRoutes from './routes/adminPinecone.js';
 import adminIngestRoutes from './routes/adminIngest.js';
+import businessDataRoutes from './routes/businessData.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -97,6 +98,7 @@ app.use('/api/admin/users', adminUsersRoutes);
 app.use('/api/admin/analysis', adminAnalysisRoutes);
 app.use('/api/admin/pinecone', adminPineconeRoutes);
 app.use('/api/admin/ingest', adminIngestRoutes);
+app.use('/api/business', businessDataRoutes);
 
 // Future routes will mount here:
 // app.use('/api/platform', platformRoutes);
