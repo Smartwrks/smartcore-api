@@ -7,24 +7,35 @@ const router = express.Router();
 router.use(requireAccountAccess);
 
 /**
- * GET /api/business/customers?search=...
- * Look up customers by name, code, or email. Returns top 10 matches.
+ * GET /api/business/customers?search=...&customer_type=...&limit=...
+ * Look up or list active customers. With `search`, returns top 10 fuzzy matches
+ * across name/code/email/contact. Without `search`, returns the full list
+ * (up to `limit`, default 50, max 200), optionally filtered by `customer_type`.
  */
 router.get('/customers', async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search, customer_type } = req.query;
+    const isSearch = Boolean(search);
+    const requestedLimit = Number(req.query.limit);
+    const limit = isSearch
+      ? 10
+      : Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 200);
+
     let query = supabase
       .from('sc_customers')
       .select('*')
       .eq('account_id', req.account.id)
       .eq('is_active', true)
       .order('customer_name')
-      .limit(10);
+      .limit(limit);
 
-    if (search) {
+    if (isSearch) {
       query = query.or(
         `customer_name.ilike.%${search}%,customer_code.ilike.%${search}%,email.ilike.%${search}%,contact_name.ilike.%${search}%`
       );
+    }
+    if (customer_type) {
+      query = query.eq('customer_type', customer_type);
     }
 
     const { data, error } = await query;
